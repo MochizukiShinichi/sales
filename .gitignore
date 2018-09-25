@@ -1,0 +1,4 @@
+./trained_model/*
+./.ipynb_checkpoints/*
+*.csv
+./data/*
