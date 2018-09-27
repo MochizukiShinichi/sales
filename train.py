@@ -19,14 +19,14 @@ ITEMS_COUNT = len(items)
 CATS_COUNT = len(item_cats)
 
 # add feature month to train data
-X['month'] = abs(X.date_block_num % 12 - 6)
+X['month'] = X.date_block_num % 12
 # add item categories to train data
 X['item_cat'] = X.join(items, on='item_id', how='left', lsuffix='item_id').item_category_id
 
 # test data preparation
 X_test = pd.read_csv('data/test.csv')
 X_test['date_block_num'] = 34
-X_test['month'] = 4
+X_test['month'] = 11
 
 # add item price to test
 X_test['item_price'] = X_test.join(data, on='item_id', how='left', lsuffix='item_id').item_price
@@ -53,7 +53,7 @@ keras.backend.clear_session()
 NUM_EPOCHS = 100
 LEARNING_RATE= 0.01
 # shops: 60 item_num: 22170 item_cat: 84
-SHOP_EMB_DIM, ITEM_EMB_DIM, CAT_EMB_DIM = (16,128,16)
+SHOP_EMB_DIM, ITEM_EMB_DIM, CAT_EMB_DIM = (3,13,4)
 
 def build_model():
 #   input layers--numeric 
@@ -72,6 +72,9 @@ def build_model():
     shop_emb = BatchNormalization(name='shop_batchnorm')(shop_emb)
     shop_emb = Flatten(name='shop_flatten')(shop_emb)
     
+    month_emb = Embedding(input_dim=12, output_dim=1, input_length=1, name='month_emb')(month)
+    month_emb = Flatten(name='month_flat')(month_emb)
+
     item_emb = Embedding(input_dim=ITEMS_COUNT, output_dim=ITEM_EMB_DIM,input_length=1, name='item_emb')(item)
     item_emb = BatchNormalization(name='item_batchnorm')(item_emb)
     item_emb = Flatten(name='item_flatten')(item_emb)
@@ -80,7 +83,7 @@ def build_model():
     cat_emb = BatchNormalization(name='cat_batchnorm')(cat_emb)
     cat_emb = Flatten(name='cat_flatten')(cat_emb)
 
-    inputs = Concatenate(axis=-1, name='inputs_concat')([date, shop_emb, item_emb, month, price, cat_emb])
+    inputs = Concatenate(axis=-1, name='inputs_concat')([date, shop_emb, item_emb, month_emb, price, cat_emb])
     inputs_batch = BatchNormalization(name='inputs_batchnorm')(inputs)
     
     preds = Dense(48, activation='tanh', name='dense1')(inputs_batch)
