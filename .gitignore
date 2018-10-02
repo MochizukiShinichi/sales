@@ -6,3 +6,4 @@ data/*
 .idea/*
 __pycache__/
 Untitiled.ipynb
+ETL.ipynb
