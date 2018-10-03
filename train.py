@@ -9,9 +9,10 @@ from keras.models import Sequential, Model, load_model
 from keras.layers import Dense, Embedding, Input, Concatenate, Flatten, BatchNormalization, Activation, Dropout, Lambda
 from keras.callbacks import ModelCheckpoint,EarlyStopping,TensorBoard,TerminateOnNaN
 from keras import optimizers, initializers
+from keras.backend import one_hot
 
 # load original training data
-data = pd.read_csv('data/train.csv')
+data = pd.read_csv('data/train.csv', dtype={'shop_id': np.int32, 'item_it': np.int32, 'item_cnt_day':np.int32})
 
 # training data aggregation by day_block
 X = pd.DataFrame(data.groupby(['date_block_num','shop_id', 'item_id', 'item_price'])['item_cnt_day'].sum()).reset_index()
@@ -58,10 +59,10 @@ def build_model():
     date = Input(shape=(1,), name='date_input')
     price = Input(shape=(1,), name='price_input')
 #   input layers--categorical
-    shop = Input(shape=(1,), name='shop_input')
-    item = Input(shape=(1,), name='item_input')
-    month = Input(shape=(1,), name='month_input')
-    cat = Input(shape=(1,), name='category_input')
+    shop = Input(shape=(1,), name='shop_input',dtype='int32')
+    item = Input(shape=(1,), name='item_input', dtype='int32')
+    month = Input(shape=(1,), name='month_input', dtype='int32')
+    cat = Input(shape=(1,), name='category_input', dtype='int32')
     
 #     weight_init = initializers.RandomNormal(mean=1, stddev=2)
 #     bias_init = initializers.RandomNormal(mean=0, stddev=0.5)
@@ -89,7 +90,25 @@ def build_model():
     preds = Dense(16, activation='relu',name='dense2')(preds)
     # preds = Dropout(0.1)(preds)
     preds = Dense(16, activation='relu', name='dense3')(preds)
-    preds = Dense(1,activation ='softplus', name='output')(preds)
+
+    oh_shop = Lambda(lambda x: one_hot(x, SHOPS_COUNT), output_shape = (1, SHOPS_COUNT))(shop)
+    oh_cat = Lambda(lambda x: one_hot(x, CATS_COUNT),output_shape = (1, CATS_COUNT))(cat)
+    oh_item = Lambda(lambda x: one_hot(x, ITEMS_COUNT),output_shape = (1, ITEMS_COUNT))(item)
+
+    wide_shop = Dense(4, name='wide_shop')(oh_shop)
+    wide_cat = Dense(64, name='wide_cat')(oh_cat)
+    wide_item = Dense(4, name='wide_item')(oh_item)    
+
+    wide_shop_flat = Flatten(name='wide_shop_flat')(wide_shop)
+    wide_cat_flat = Flatten(name='wide_cat_flat')(wide_cat)
+    wide_item_flat = Flatten(name='wide_item_flat')(wide_item)
+    wide_item_flat = BatchNormalization(name='wide_item_batchnorm')(wide_item_flat)
+
+    all_inputs = Concatenate(axis=-1, name='all_inputs_concat')([wide_item_flat, wide_shop_flat, wide_cat_flat, preds])
+
+    # preds = Dense(8,activation ='relu', name='out_nn')(all_inputs)
+    preds = Dense(1, activation='relu', name='final_out')(all_inputs)
+
     return Model(inputs=[date, shop, item, month, price, cat], outputs=preds)
     
 
@@ -109,11 +128,11 @@ filepath = OUTPUT_DIR +'/' + "weights-improvement-{epoch:02d}-{val_loss:.6f}.hdf
 callbacks = [
              TerminateOnNaN(),
              ModelCheckpoint(filepath=filepath, monitor='val_loss', verbose=1, period=1, save_best_only=True),
-             EarlyStopping(patience=3, monitor='loss'),
-             TensorBoard(log_dir=OUTPUT_DIR, write_images=True, histogram_freq=1, write_grads=True),
+             EarlyStopping(patience=2, monitor='loss'),
+             TensorBoard(log_dir=OUTPUT_DIR, write_images=False, histogram_freq=1, write_grads=True),
              keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=1, verbose=1, mode='auto', min_delta=0.0001, cooldown=0, min_lr=0),
              keras.callbacks.CSVLogger('log.csv', separator=',', append=False)
 ]
 
-model.fit(inputs, y, batch_size = 128, epochs=NUM_EPOCHS, callbacks=callbacks, shuffle=True,
+model.fit(inputs, y, batch_size = 512, epochs=NUM_EPOCHS, callbacks=callbacks, shuffle=True,
           validation_split=0.01)
