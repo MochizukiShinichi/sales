@@ -9,7 +9,8 @@ from keras.models import Sequential, Model, load_model
 from keras.layers import Dense, Embedding, Input, Concatenate, Flatten, BatchNormalization, Activation, Dropout, Lambda
 from keras.callbacks import ModelCheckpoint,EarlyStopping,TensorBoard,TerminateOnNaN
 from keras import optimizers, initializers
-from keras.backend import one_hot
+from keras.backend import one_hot, sqrt
+from keras.losses import mean_squared_error
 
 # load original training data
 data = pd.read_csv('data/train.csv', dtype={'shop_id': np.int32, 'item_id': np.int32, 'item_cnt_day':np.int32})
@@ -30,17 +31,6 @@ X['month'] = X.date_block_num % 12
 # add item categories to train data
 X['item_cat'] = X.join(items, on='item_id', how='left', lsuffix='item_id').item_category_id
 
-# test data preparation
-# X_test = pd.read_csv('data/test.csv')
-# X_test['date_block_num'] = 34
-# X_test['month'] = 11
-
-# # add item price to test
-# X_test['item_price'] = X_test.join(data, on='item_id', how='left', lsuffix='item_id').item_price
-# X_test['item_cat'] = X_test.join(items, on='item_id', how='left', lsuffix='item_id').item_category_id
-# # # create test inputs
-# x_test = X_test.values
-# inputs_test = [x_test[:,i] for i in [3,1,2,4,5,6]]
 
 # create training inputs and target
 x = X.values
@@ -49,9 +39,9 @@ y = x[:,4]
 
 # training spec
 keras.backend.clear_session()
-NUM_EPOCHS = 10
+NUM_EPOCHS = 50
 LEARNING_RATE= 0.00001
-BETA1=0.80
+BETA1=0.90
 # shops: 60 item_num: 22170 item_cat: 84
 SHOP_EMB_DIM, ITEM_EMB_DIM, CAT_EMB_DIM = (16,128,16)
 
@@ -65,8 +55,6 @@ def build_model():
     month = Input(shape=(1,), name='month_input', dtype='int32')
     cat = Input(shape=(1,), name='category_input', dtype='int32')
     
-#     weight_init = initializers.RandomNormal(mean=1, stddev=2)
-#     bias_init = initializers.RandomNormal(mean=0, stddev=0.5)
    
     shop_emb = Embedding(input_dim=SHOPS_COUNT, output_dim=SHOP_EMB_DIM, input_length=1, name='shop_emb')(shop)
     shop_emb = Flatten(name='shop_flatten')(shop_emb)
@@ -96,9 +84,9 @@ def build_model():
     oh_cat = Lambda(lambda x: one_hot(x, CATS_COUNT),output_shape = (1, CATS_COUNT))(cat)
     oh_item = Lambda(lambda x: one_hot(x, ITEMS_COUNT),output_shape = (1, ITEMS_COUNT))(item)
 
-    wide_shop = Dense(4, name='wide_shop')(oh_shop)
-    wide_cat = Dense(4, name='wide_cat')(oh_cat)
-    wide_item = Dense(64, name='wide_item')(oh_item)    
+    wide_shop = Dense(1, name='wide_shop')(oh_shop)
+    wide_cat = Dense(1, name='wide_cat')(oh_cat)
+    wide_item = Dense(4, name='wide_item')(oh_item)    
 
     wide_shop_flat = Flatten(name='wide_shop_flat')(wide_shop)
     wide_cat_flat = Flatten(name='wide_cat_flat')(wide_cat)
@@ -118,25 +106,27 @@ def build_model():
 model = build_model()
 model.summary()
 
-# model.load_weights('./keras/weights-improvement-01-16.679170.hdf5')
 adam = optimizers.Adam(lr=LEARNING_RATE, beta_1=BETA1)
-model.compile(optimizer = adam,loss='mean_squared_error')
-# model.save(OUTPUT_DIR)
+
+def rmse(y_true, y_pred):
+    return sqrt(mean_squared_error(y_true, y_pred))
+   
+model.compile(optimizer = adam,loss='mean_squared_error', metrics=[rmse])
 
 OUTPUT_DIR = './trained_model/'+ 'lr' + str(LEARNING_RATE) + '_' + datetime.now().strftime("%dd%H-%M")
-filepath = OUTPUT_DIR +'/' + "weights-improvement-{epoch:02d}-{val_loss:.6f}.hdf5"
+filepath = OUTPUT_DIR +'/' + "weights-improvement-{epoch:02d}-{val_rmse:.6f}.hdf5"
 
 # model = load_model('keras/weights-improvement-02-14.970410.hdf5')
-model.load_weights('trained_model/lr0.0001_03d11-16/weights-improvement-07-18.204925.hdf5')
+# model.load_weights('trained_model/lr0.0001_04d16-09/weights-improvement-08-1.191472.hdf5')
 
 callbacks = [
              TerminateOnNaN(),
-             ModelCheckpoint(filepath=filepath, monitor='val_loss', verbose=1, period=1, save_best_only=True),
-             EarlyStopping(patience=2, monitor='loss'),
+             ModelCheckpoint(filepath=filepath, monitor='val_rmse', verbose=1, period=1, save_best_only=True),
+             # EarlyStopping(patience=2, monitor='loss'),
              TensorBoard(log_dir=OUTPUT_DIR, write_images=False, histogram_freq=1, write_grads=True),
-             # keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=1, verbose=1, mode='auto', min_delta=0.0001, cooldown=0, min_lr=0),
+             keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=1, verbose=1, mode='auto', min_delta=0.0001, cooldown=0, min_lr=0),
              keras.callbacks.CSVLogger('log.csv', separator=',', append=False)
 ]
 
-model.fit(inputs, y, batch_size = 512, epochs=NUM_EPOCHS, callbacks=callbacks, shuffle=True,
+model.fit(inputs, y, batch_size = 1024, epochs=NUM_EPOCHS, callbacks=callbacks, shuffle=True,
           validation_split=0.01)
