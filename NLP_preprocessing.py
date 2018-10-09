@@ -4,6 +4,7 @@ import numpy as np
 
 import polyglot
 from polyglot.detect import Detector
+from polyglot.mapping import Embedding
 import string
 
 data = pd.read_csv('data/train.csv', dtype={'shop_id': np.int32, 'item_id': np.int32, 'item_cnt_day':np.int32})

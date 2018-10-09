@@ -1,4 +1,8 @@
 from __future__ import absolute_import
+
+import pandas as pd
+import numpy as np
+
 import keras
 from keras.models import Sequential, Model, load_model
 from keras.layers import Dense, Embedding, Input, Concatenate, Flatten, BatchNormalization, Activation, Dropout, Lambda
@@ -39,10 +43,10 @@ def build_model():
     inputs = Concatenate(axis=-1, name='inputs_concat')([date, month_flat, item, cat, shop])
     inputs_batch = BatchNormalization(name='inputs_batchnorm')(inputs)
     
-    preds = Dense(48, activation='relu', name='dense1')(inputs_batch)
+    preds = Dense(128, activation='relu', name='dense1')(inputs_batch)
 #     preds = BatchNormalization(name='batchnorm1')(preds)
 #     preds = Dropout(0.1)(preds)
-    preds = Dense(16, activation='relu',name='dense2')(preds)
+    preds = Dense(64, activation='relu',name='dense2')(preds)
 #     preds = Dropout(0.1)(preds)
     preds = Dense(16, activation='relu', name='dense3')(preds)
 
@@ -71,7 +75,7 @@ filepath = OUTPUT_DIR +'/' + "weights-improvement-{epoch:02d}-{val_rmse:.6f}.hdf
 callbacks = [
              TerminateOnNaN(),
              ModelCheckpoint(filepath=filepath, monitor='val_rmse', verbose=1, period=1, save_best_only=True),
-             # EarlyStopping(patience=2, monitor='loss'),
+             EarlyStopping(patience=2, monitor='val_loss'),
              TensorBoard(log_dir=OUTPUT_DIR, write_images=False, histogram_freq=1, write_grads=True),
              keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=1, verbose=1, mode='auto', min_delta=0.0001, cooldown=0, min_lr=0),
              keras.callbacks.CSVLogger('log.csv', separator=',', append=False)
