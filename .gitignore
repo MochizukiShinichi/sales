@@ -7,3 +7,4 @@ data/*
 __pycache__/
 Untitiled.ipynb
 ETL.ipynb
+price_trained_model/
